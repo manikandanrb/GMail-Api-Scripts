@@ -1,0 +1,35 @@
+[
+    {
+        "rule_id": 1,
+        "description": "rule_1",
+        "conditions": {
+            "condition_predicate": "all",
+            "rules": [
+                {
+                    "field_name": "sender",
+                    "predicate": "contains",
+                    "value": "happyfox"                
+                },
+                {
+                    "field_name": "subject",
+                    "predicate": "contains",
+                    "value": "application"                
+                },
+                {
+                    "field_name": "date_received",
+                    "predicate": "is_less_than",
+                    "value": "2"                
+                }
+            ]
+        },
+        "actions": [
+            {
+                "action": "move_message",
+                "to_mailbox": "inbox"
+            },
+            {
+                "action": "mark_as_read"
+            }
+        ]
+    }
+]
