@@ -13,10 +13,15 @@ SCOPES = 'https://www.googleapis.com/auth/gmail.modify'
 user = 'root'
 pword = 'root'
 database = 'script'
-table_name = 'TestEmails'
+table_name = 'emails'
+
+'''
+    Here extracted only inbox mail. if we need all mails just append these lables like this
+    ['INBOX', 'CATEGORY_PERSONAL', 'CATEGORY_FORUMS', 'SENT', 'TRASH', 'DRAFT', 'STARRED']
+'''
+labelIds = ['INBOX']
 
 def main():
-   
     store = file.Storage('token.json')
     creds = store.get()
     if not creds or creds.invalid:
@@ -26,7 +31,7 @@ def main():
     
     try:
         # Call the Gmail API to fetch INBOX
-        results = service.users().messages().list(userId='me',labelIds = ['INBOX']).execute()
+        results = service.users().messages().list(userId='me',labelIds = labelIds).execute()
         messages = []
         if 'messages' in results:
             messages.extend(results['messages'])
@@ -34,10 +39,9 @@ def main():
         while 'nextPageToken' in results:
             page_token = results['nextPageToken']
             results = service.users().messages().list(userId='me',
-                                                        labelIds = ['INBOX'],
+                                                        labelIds = labelIds,
                                                         pageToken=page_token).execute()
             messages.extend(results['messages'])
-            print(len(messages))
 
     except errors.HttpError, error:
         print 'An error occurred: %s' % error
@@ -63,6 +67,13 @@ def main():
                 else:
                     pass
 
+            for one in headr: # getting the Receiver
+                if one['name'] == 'To':
+                    msg_subject = one['value']
+                    temp_dict['Receiver'] = msg_subject
+                else:
+                    pass
+
             for two in headr: # getting the date
                 if two['name'] == 'Date':
                     msg_date = two['value']
@@ -83,12 +94,14 @@ def main():
                     pass
 
             temp_dict['Snippet'] = message['snippet'] # fetching message snippet
-
-            # service.users().messages().modify(userId='me', id=m_id,body={'removeLabelIds': [], 'addLabelIds': ['UNREAD', 'INBOX']}).execute()
             final_list.append(temp_dict)
     
     engine = create_engine('mysql+pymysql://%s:%s@localhost:3306/%s' %(user, pword, database), echo = False)
     df = pd.DataFrame(final_list)
+    
+    '''
+        Table fields [ 'Date', 'Sender', 'Receiver', 'Subject', 'Snippet', 'Message_id' ]
+    '''
     df.to_sql(table_name, con = engine, if_exists = 'append', index = False)
 
 if __name__ == '__main__':

@@ -2,6 +2,7 @@ from googleapiclient.discovery import build
 from httplib2 import Http
 import pandas as pd
 import datetime
+from dateutil.relativedelta import relativedelta
 import pymysql
 from sqlalchemy import create_engine
 import json
@@ -13,63 +14,96 @@ RULES_FILE_PATH = 'Rules.json'
 user = 'root'
 pword = 'root'
 database = 'script'
-table_name = 'TestEmails'
+table_name = 'emails'
+condition_predicate = {
+    'all': 'AND',
+    'any': 'OR'
+}
 
-def must_match_all_rule(data):
+table_field_name = {
+    'from': 'Sender',
+    'to': 'Receiver',
+    'subject': 'Subject'
+}
+
+'''
+    Filter messages given conditions
+'''
+def filter_messages(data):
     engine = create_engine('mysql+pymysql://%s:%s@localhost:3306/%s' %(user, pword, database), echo = False)
-    df = pd.read_sql(table_name, con=engine)
-    query_value = ''
     rules = data['conditions']['rules']
-    for rule in rules:
-        if rule['predicate'] == 'contains':
-            query_value += '{0}.str.contains("{1}", case=False) and '.format(rule["field_name"].capitalize() , rule["value"])
-        if rule['predicate'] == 'is_less_than':
-            query_date = datetime.datetime.now() - datetime.timedelta(days=1)
-            date_string = query_date.strftime("%Y-%m-%d") 
-            query_value += '(Date < "{0}")'.format(date_string)
-    filtered_df = df[['Message_id', 'Sender', 'Subject', 'Date']].query(query_value)
-    return filtered_df['Message_id'].to_list()
-
-
-def atleast_one_rule_must_match(data):
-    engine = create_engine('mysql+pymysql://%s:%s@localhost:3306/%s' %(user, pword, database), echo = False)
-    df = pd.read_sql(table_name, con=engine)
+    condition_operator = condition_predicate.get(data['conditions']['condition_predicate']) 
     query_value = ''
-    rules = data['conditions']['rules']
-    for rule in rules:
-        if rule['predicate'] == 'contains':
-            query_value += '{0}.str.contains("{1}", case=False) or '.format(rule["field_name"].capitalize() , rule["value"])
-        if rule['predicate'] == 'is_less_than':
-            query_date = datetime.datetime.now() - datetime.timedelta(days=1)
-            date_string = query_date.strftime("%Y-%m-%d") 
-            query_value += '(Date < "{0}")'.format(date_string)
-    filtered_df = df[['Message_id', 'Sender', 'Subject', 'Date']].query(query_value)
-    return filtered_df['Message_id'].to_list()
+    if len(rules) > 0 :
+        query_value += 'SELECT * FROM {0} WHERE '.format(table_name)
+        for rule in rules:
+            # Contains 
+            if rule['predicate'] == 'contains':
+                query_value += '{0} LIKE "%%{1}%%" {2} '.format(table_field_name.get(rule["field_name"]), rule["value"], condition_operator)
+            
+            # Does not contains 
+            if rule['predicate'] == 'does_not_contains':
+                query_value += '{0} NOT LIKE "%%{1}%%" {2} '.format(table_field_name.get(rule["field_name"]), rule["value"], condition_operator)
+            
+            # Equals
+            if rule['predicate'] == 'equals':
+                query_value += '{0} = "{1}" {2} '.format(table_field_name.get(rule["field_name"]), rule["value"], condition_operator)
+            
+            # Does not equals
+            if rule['predicate'] == 'does_not_equals':
+                query_value += '{0} != "{1}" {2} '.format(table_field_name.get(rule["field_name"]), rule["value"], condition_operator)
+
+            # Is less than
+            if rule['predicate'] == 'is_less_than':
+                query_date = datetime.datetime.now() - datetime.timedelta(days=int(rule["value"]))
+                date_string = query_date.strftime("%Y-%m-%d") 
+                query_value += 'Date < "{0}"'.format(date_string)
+            
+            # Is greater than
+            if rule['predicate'] == 'is_greater_than':
+                query_date = datetime.datetime.now() - datetime.timedelta(days=int(rule["value"]))
+                date_string = query_date.strftime("%Y-%m-%d") 
+                query_value += 'Date > "{0}"'.format(date_string)
+
+                '''
+                    Months based query date snippet
+                '''
+                # query_date = datetime.datetime.now() - datetime.relativedelta(months=int(rule["value"]))
+                # date_string = query_date.strftime("%Y-%m-%d") 
+                # query_value += 'Date > "{0}"'.format(date_string)
+            
+    df = pd.read_sql(query_value, con=engine)
+    return df['Message_id'].to_list()
 
 
+'''
+    Perform actions condition matched messages
+'''
 def perform_actions(message_ids, actions, service):
     for action in actions:
+        removeLabelIds = []
+        addLabelIds = []
+
+        # Move message action 
         if action['action'] == 'move_message':
             to_mailbox = action['to_mailbox']
-            for mssg_id in message_ids:
-                addLabelIds = [to_mailbox.upper()]
-                service.users().messages().modify(userId='me', id=mssg_id ,body={'removeLabelIds': [], 'addLabelIds': addLabelIds}).execute()
-        
-        if action['action'] == 'mark_as_unread':
-            for mssg_id in message_ids:
-                service.users().messages().modify(userId='me', id=mssg_id ,body={'removeLabelIds': [], 'addLabelIds': ['UNREAD']}).execute()
-        
-        if action['action'] == 'mark_as_read':
-            for mssg_id in message_ids:
-                service.users().messages().modify(userId='me', id=mssg_id ,body={'removeLabelIds': ['UNREAD'], 'addLabelIds': []}).execute()
-        
-        if action['action'] == 'mark_as_starred':
-            for mssg_id in message_ids:
-                service.users().messages().modify(userId='me', id=mssg_id ,body={'removeLabelIds': [], 'addLabelIds': ['STARRED']}).execute()
+            addLabelIds = [to_mailbox.upper()]
 
+        # Mark as unread
+        elif(action['action'] == 'mark_as_unread'):
+            addLabelIds.extend(['UNREAD'])
+
+        # Mark as read
+        elif(action['action'] == 'mark_as_read'):
+            removeLabelIds.extend(['UNREAD'])
+
+        '''
+            Perform action on cloud message using GMail Api services
+        '''
+        for mssg_id in message_ids:
+            service.users().messages().modify(userId='me', id=mssg_id ,body={'removeLabelIds': removeLabelIds, 'addLabelIds': addLabelIds}).execute()
 
 def main():
-   
     store = file.Storage('token.json')
     creds = store.get()
     if not creds or creds.invalid:
@@ -81,14 +115,13 @@ def main():
         rules = json.load(f)
     
     for rule in rules:
-        if rule['conditions']['condition_predicate'] == 'all':
-            res = must_match_all_rule(rule)
-            perform_actions(res, rule['actions'], service)
-            print('Success')
-        else:
-            res = atleast_one_rule_must_match(rule)
-            perform_actions(res, rule['actions'], service)
-            print('Success')
+        #filter messages base on the conditions
+        result = filter_messages(rule)
+        print('Filter message count- {0}'.format(len(result)))
+        #perform actions on these messages
+        perform_actions(result, rule['actions'], service)
+        print('Success')
+
 
 if __name__ == '__main__':
     main()
