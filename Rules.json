@@ -6,7 +6,7 @@
             "condition_predicate": "all",
             "rules": [
                 {
-                    "field_name": "sender",
+                    "field_name": "from",
                     "predicate": "contains",
                     "value": "happyfox"                
                 },
@@ -28,7 +28,7 @@
                 "to_mailbox": "inbox"
             },
             {
-                "action": "mark_as_read"
+                "action": "mark_as_unread"
             }
         ]
     }
