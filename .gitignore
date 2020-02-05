@@ -1,2 +1,12 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*pyc
+
+# Pyre type checker
+.pyre/
+
+# credentials
 credentials.json
 token.json

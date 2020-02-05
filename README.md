@@ -6,3 +6,5 @@
 3.Install relevant dependencies.\
 4.Run fetchEmail.py script.\
 5.Run processEmail.py script.
+
+<b>Reference</b>: https://developers.google.com/gmail/api/quickstart/python

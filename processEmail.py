@@ -102,7 +102,8 @@ def perform_actions(message_ids, actions, service):
         '''
         for mssg_id in message_ids:
             service.users().messages().modify(userId='me', id=mssg_id ,body={'removeLabelIds': removeLabelIds, 'addLabelIds': addLabelIds}).execute()
-
+    return True
+    
 def main():
     store = file.Storage('token.json')
     creds = store.get()
@@ -117,7 +118,7 @@ def main():
     for rule in rules:
         #filter messages base on the conditions
         result = filter_messages(rule)
-        print('Filter message count- {0}'.format(len(result)))
+        print('Filtered message count- {0}'.format(len(result)))
         #perform actions on these messages
         perform_actions(result, rule['actions'], service)
         print('Success')
